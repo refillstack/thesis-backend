@@ -1,0 +1,1351 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+services/
+  __init__.py
+  analysis_service.py
+  ocr_service.py
+database.py
+Dockerfile
+main.py
+models.py
+requirements.txt
+schema.sql
+supabase_client.py
+test_api.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="services/__init__.py">
+# This file is intentionally empty
+# It marks the services directory as a Python package
+</file>
+
+<file path="services/analysis_service.py">
+from mistralai import Mistral
+from openai import OpenAI
+import os
+from typing import Dict, Any
+import base64
+
+class AnalysisService:
+    def __init__(self):
+        mistral_api_key = os.getenv("MISTRAL_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        
+        if not mistral_api_key:
+            raise ValueError("MISTRAL_API_KEY not set")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY not set")
+            
+        self.mistral_client = Mistral(api_key=mistral_api_key)
+        self.openai_client = OpenAI(api_key=openai_api_key)
+        self.model = "mistral-large-latest"
+        self.openai_model = "gpt-4o"
+
+    async def extract_key_info(self, text: str) -> Dict[str, Any]:
+        """Use Mistral to extract key information from text"""
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that extracts key information from academic texts."
+            },
+            {
+                "role": "user",
+                "content": f"""
+                Please analyze this text and extract the following information in JSON format:
+                - title: The main title or topic
+                - abstract: A brief summary (max 200 words)
+                - keywords: List of 5-10 key terms or concepts
+                - main_points: List of 3-5 main arguments or findings
+                
+                Text to analyze: {text[:4000]}  # Limit text length for API
+                """
+            }
+        ]
+        
+        response = self.mistral_client.chat.complete(
+            model=self.model,
+            messages=messages
+        )
+        return response.choices[0].message.content
+
+    async def analyze_content(self, extracted_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Use OpenAI to perform deeper analysis"""
+        prompt = f"""
+        Analyze the following academic content and provide:
+        1. Research methodology assessment
+        2. Critical evaluation of arguments
+        3. Potential gaps or limitations
+        4. Future research directions
+        5. Academic impact score (1-10)
+        
+        Content to analyze:
+        {str(extracted_info)}
+        """
+        
+        response = self.openai_client.chat.completions.create(
+            model=self.openai_model,
+            messages=[
+                {"role": "system", "content": "You are an expert academic analyst."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
+
+    async def analyze_paper(self, text_content: str) -> Dict[str, Any]:
+        """Comprehensive academic paper analysis using GPT-4o"""
+        try:
+            completion = self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": """You are an expert academic paper analyzer. 
+                    Analyze the paper and provide a detailed JSON response with the following structure:
+                    {
+                        "basic_info": {
+                            "title": "full title of the paper",
+                            "authors": ["list of all authors"],
+                            "year_of_publication": "year (extract from text)",
+                            "type": "type of paper (e.g., research article, review, case study)",
+                            "link_to_article": "URL if mentioned in the text"
+                        },
+                        "analysis": {
+                            "relevance_score": 1-10,
+                            "relevance_explanation": "detailed explanation of relevance to field",
+                            "main_findings": [
+                                "list of key findings and conclusions"
+                            ],
+                            "methods": {
+                                "methodology_type": "primary methodology used",
+                                "specific_methods": ["list of specific methods used"],
+                                "data_collection": "description of data collection process",
+                                "analysis_techniques": ["list of analysis techniques"]
+                            },
+                            "gaps_and_limitations": {
+                                "identified_gaps": ["list of research gaps"],
+                                "limitations": ["list of study limitations"],
+                                "methodology_limitations": ["specific limitations in methods"]
+                            }
+                        },
+                        "quality_metrics": {
+                            "methodology_score": 1-10,
+                            "data_quality_score": 1-10,
+                            "innovation_score": 1-10,
+                            "impact_score": 1-10
+                        },
+                        "meta_info": {
+                            "reviewer_initials": "extract or mark as N/A",
+                            "review_date": "current date",
+                            "additional_notes": ["any other important observations"]
+                        }
+                    }"""},
+                    {"role": "user", "content": f"Analyze this academic paper and provide a detailed assessment. Extract all available information for each field. If any field cannot be determined from the text, mark it as 'Not specified in text':\n\n{text_content}"}
+                ]
+            )
+            
+            content = completion.choices[0].message.content
+            print(f"Paper analysis raw response: {content}")
+            
+            # Try to parse the response as JSON
+            import json
+            try:
+                # Check if the response is already JSON
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # If not, try to extract JSON from markdown or text
+                if "```json" in content:
+                    # Extract JSON from markdown code block
+                    json_str = content.split("```json")[1].split("```")[0].strip()
+                    return json.loads(json_str)
+                else:
+                    # Create a fallback structure
+                    print("Could not parse JSON from paper analysis response")
+                    return {
+                        "basic_info": {
+                            "title": "Analysis of document",
+                            "authors": ["Not extracted"],
+                            "year_of_publication": "Not extracted",
+                            "type": "Not extracted",
+                            "link_to_article": "Not found"
+                        },
+                        "analysis": {
+                            "relevance_score": 5,
+                            "relevance_explanation": "Relevance could not be determined",
+                            "main_findings": ["Could not extract findings from text"],
+                            "methods": {
+                                "methodology_type": "Not specified",
+                                "specific_methods": ["Not extracted"],
+                                "data_collection": "Not specified",
+                                "analysis_techniques": ["Not extracted"]
+                            },
+                            "gaps_and_limitations": {
+                                "identified_gaps": ["Not extracted"],
+                                "limitations": ["Not extracted"],
+                                "methodology_limitations": ["Not extracted"]
+                            }
+                        },
+                        "quality_metrics": {
+                            "methodology_score": 5,
+                            "data_quality_score": 5,
+                            "innovation_score": 5,
+                            "impact_score": 5
+                        },
+                        "meta_info": {
+                            "reviewer_initials": "N/A",
+                            "review_date": "Current",
+                            "additional_notes": ["Analysis failed to produce structured output"]
+                        }
+                    }
+
+        except Exception as e:
+            print(f"OpenAI analysis error: {str(e)}")
+            raise Exception(f"OpenAI analysis error: {str(e)}")
+
+    async def analyze_citations(self, text_content: str) -> Dict[str, Any]:
+        """Analyze citation quality and academic references"""
+        try:
+            completion = self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": """Analyze the citations and references in this paper.
+                    Provide a JSON response with:
+                    {
+                        "citation_metrics": {
+                            "total_citations": number,
+                            "unique_sources": number,
+                            "year_range": "oldest to newest citation",
+                            "most_cited_authors": ["list of frequently cited authors"]
+                        },
+                        "citation_quality": {
+                            "recency": {
+                                "score": 1-10,
+                                "analysis": "assessment of citation dates",
+                                "recent_citations": "number of citations from last 5 years"
+                            },
+                            "authority": {
+                                "score": 1-10,
+                                "key_references": ["most important references"],
+                                "seminal_works": ["foundational papers cited"]
+                            },
+                            "diversity": {
+                                "score": 1-10,
+                                "source_types": ["distribution of source types"],
+                                "field_coverage": "breadth of field coverage"
+                            }
+                        },
+                        "recommendations": {
+                            "missing_citations": ["suggested additional citations"],
+                            "citation_improvements": ["ways to improve citation quality"],
+                            "key_papers_to_add": ["specific papers to consider adding"]
+                        }
+                    }"""},
+                    {"role": "user", "content": f"Analyze the citations in this paper:\n\n{text_content}"}
+                ]
+            )
+            
+            content = completion.choices[0].message.content
+            print(f"Citation analysis raw response: {content}")
+            
+            # Try to parse the response as JSON
+            import json
+            try:
+                # Check if the response is already JSON
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # If not, try to extract JSON from markdown or text
+                if "```json" in content:
+                    # Extract JSON from markdown code block
+                    json_str = content.split("```json")[1].split("```")[0].strip()
+                    return json.loads(json_str)
+                else:
+                    # Create a fallback structure
+                    print("Could not parse JSON from citation analysis response")
+                    return {
+                        "citation_metrics": {
+                            "total_citations": 0,
+                            "unique_sources": 0,
+                            "year_range": "Not determined",
+                            "most_cited_authors": ["Not extracted"]
+                        },
+                        "citation_quality": {
+                            "recency": {
+                                "score": 5,
+                                "analysis": "Citation dates could not be determined",
+                                "recent_citations": 0
+                            },
+                            "authority": {
+                                "score": 5,
+                                "key_references": ["Not determined"],
+                                "seminal_works": ["Not determined"]
+                            },
+                            "diversity": {
+                                "score": 5,
+                                "source_types": ["Not determined"],
+                                "field_coverage": "Not determined"
+                            }
+                        },
+                        "recommendations": {
+                            "missing_citations": ["Not determined"],
+                            "citation_improvements": ["Not determined"],
+                            "key_papers_to_add": ["Not determined"]
+                        }
+                    }
+
+        except Exception as e:
+            print(f"OpenAI citation analysis error: {str(e)}")
+            raise Exception(f"OpenAI citation analysis error: {str(e)}")
+
+    async def analyze_research_gaps(self, text_content: str) -> Dict[str, Any]:
+        """Identify research gaps and future opportunities"""
+        try:
+            completion = self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": """Identify research gaps and opportunities.
+                    Provide a JSON response with:
+                    {
+                        "research_gaps": {
+                            "identified_gaps": ["list of gaps"],
+                            "priority_levels": {
+                                "high_priority": ["urgent gaps to address"],
+                                "medium_priority": ["important but less urgent gaps"],
+                                "low_priority": ["gaps that could be addressed"]
+                            },
+                            "gap_categories": {
+                                "methodological": ["gaps in methods"],
+                                "theoretical": ["gaps in theory"],
+                                "empirical": ["gaps in data/evidence"]
+                            }
+                        },
+                        "future_directions": {
+                            "short_term": ["immediate research opportunities"],
+                            "long_term": ["future research directions"],
+                            "interdisciplinary": ["cross-field opportunities"]
+                        },
+                        "implementation": {
+                            "required_resources": ["needed resources"],
+                            "potential_challenges": ["anticipated challenges"],
+                            "suggested_approaches": ["recommended methods"],
+                            "collaboration_needs": ["required expertise"]
+                        }
+                    }"""},
+                    {"role": "user", "content": f"Identify research gaps in this paper:\n\n{text_content}"}
+                ]
+            )
+            
+            content = completion.choices[0].message.content
+            print(f"Gap analysis raw response: {content}")
+            
+            # Try to parse the response as JSON
+            import json
+            try:
+                # Check if the response is already JSON
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # If not, try to extract JSON from markdown or text
+                if "```json" in content:
+                    # Extract JSON from markdown code block
+                    json_str = content.split("```json")[1].split("```")[0].strip()
+                    return json.loads(json_str)
+                else:
+                    # Create a fallback structure
+                    print("Could not parse JSON from gap analysis response")
+                    return {
+                        "research_gaps": {
+                            "identified_gaps": ["Not extracted"],
+                            "priority_levels": {
+                                "high_priority": ["Not determined"],
+                                "medium_priority": ["Not determined"],
+                                "low_priority": ["Not determined"]
+                            },
+                            "gap_categories": {
+                                "methodological": ["Not determined"],
+                                "theoretical": ["Not determined"],
+                                "empirical": ["Not determined"]
+                            }
+                        },
+                        "future_directions": {
+                            "short_term": ["Not determined"],
+                            "long_term": ["Not determined"],
+                            "interdisciplinary": ["Not determined"]
+                        },
+                        "implementation": {
+                            "required_resources": ["Not determined"],
+                            "potential_challenges": ["Not determined"],
+                            "suggested_approaches": ["Not determined"],
+                            "collaboration_needs": ["Not determined"]
+                        }
+                    }
+
+        except Exception as e:
+            print(f"OpenAI research gap analysis error: {str(e)}")
+            raise Exception(f"OpenAI research gap analysis error: {str(e)}")
+
+    async def extract_text(self, image_path: str) -> str:
+        """Extract text from image using OpenAI's vision capabilities"""
+        try:
+            with open(image_path, "rb") as image_file:
+                image_data = image_file.read()
+                
+            completion = self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Extract and transcribe all text from the provided image accurately."
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": "Please extract all text from this image, maintaining the original formatting."
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1
+            )
+
+            return completion.choices[0].message.content
+
+        except Exception as e:
+            raise Exception(f"OpenAI OCR error: {str(e)}")
+</file>
+
+<file path="services/ocr_service.py">
+import os
+from mistralai import Mistral
+import base64
+from PIL import Image
+import io
+import PyPDF2
+
+class OCRService:
+    def __init__(self):
+        api_key = os.getenv("MISTRAL_API_KEY")
+        if not api_key:
+            raise ValueError("MISTRAL_API_KEY not found in environment variables")
+        self.client = Mistral(api_key=api_key)
+        self.model = "mistral-large-latest"
+
+    def encode_image_to_base64(self, image_bytes: bytes, content_type: str) -> str:
+        """Convert image bytes to base64 string"""
+        return base64.b64encode(image_bytes).decode('utf-8')
+
+    async def extract_text(self, content: bytes, content_type: str) -> str:
+        """Extract text from image/PDF using Mistral's vision capabilities"""
+        try:
+            # Special case for text files - just return the content
+            if content_type == 'text/plain':
+                return content.decode('utf-8', errors='ignore')
+                    
+            # For PDF files, use PyPDF2
+            if content_type == 'application/pdf':
+                return self._extract_text_from_pdf(content)
+                
+            # For images, use Mistral's vision capabilities
+            return await self._process_image(content, content_type)
+                
+        except Exception as e:
+            raise Exception(f"Text extraction error: {str(e)}")
+
+    def _extract_text_from_pdf(self, pdf_content: bytes) -> str:
+        """Extract text from PDF using PyPDF2"""
+        try:
+            # Create a file-like object from bytes
+            pdf_file = io.BytesIO(pdf_content)
+            
+            # Create PDF reader object
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            
+            # Extract text from all pages
+            text = ""
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                text += page.extract_text() + "\n\n"
+            
+            if not text.strip():
+                # If no text was extracted, the PDF might be scanned
+                return "This appears to be a scanned PDF without extractable text. Please upload a text-based PDF."
+                
+            return text
+        except Exception as e:
+            return f"Error extracting text from PDF: {str(e)}"
+
+    async def _process_image(self, image_bytes: bytes, content_type: str) -> str:
+        """Process a single image using Mistral"""
+        base64_image = self.encode_image_to_base64(image_bytes, content_type)
+        
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": content_type,
+                            "data": base64_image
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": "Please extract all the text from this image. Return only the extracted text, formatted exactly as it appears in the image."
+                    }
+                ]
+            }
+        ]
+
+        response = self.client.chat.complete(
+            model=self.model,
+            messages=messages
+        )
+        return response.choices[0].message.content
+
+    async def analyze_text(self, text_content: str) -> str:
+        """Analyze the extracted text using Mistral"""
+        messages = [
+            {
+                "role": "system",
+                "content": """
+                You are an academic paper analyzer. Analyze the given paper and extract:
+                1. Main thesis/argument
+                2. Key findings
+                3. Methodology
+                4. Limitations
+                5. Future research directions
+                Provide structured, concise responses.
+                """
+            },
+            {
+                "role": "user",
+                "content": f"Analyze this academic paper:\n\n{text_content}"
+            }
+        ]
+
+        try:
+            response = self.client.chat.complete(
+                model=self.model,
+                messages=messages
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise Exception(f"Mistral analysis error: {str(e)}")
+</file>
+
+<file path="database.py">
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Get database URL from environment variable
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# If DATABASE_URL is not set or contains placeholder values, use SQLite
+if not DATABASE_URL or "[YOUR-PROJECT-REF]" in DATABASE_URL:
+    print("Warning: Using SQLite database for local development")
+    DATABASE_URL = "sqlite:///./thesis.db"
+
+engine = create_engine(DATABASE_URL, connect_args={} if DATABASE_URL.startswith("postgresql") else {"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+</file>
+
+<file path="Dockerfile">
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
+COPY . .
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Command to run the application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+</file>
+
+<file path="main.py">
+from fastapi import FastAPI, HTTPException, File, UploadFile, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+import uuid
+import os
+from dotenv import load_dotenv
+from supabase_client import supabase
+from services.ocr_service import OCRService
+from services.analysis_service import AnalysisService
+import json
+import re
+
+load_dotenv()
+
+app = FastAPI()
+
+# Get allowed origins from environment variable or use default
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8080").split(",")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Security
+security = HTTPBearer()
+
+def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify the API key from the Authorization header"""
+    api_key = os.getenv("MISTRAL_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="API key not configured")
+    
+    if credentials.credentials != api_key:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    return credentials
+
+# Initialize services
+ocr_service = OCRService()
+analysis_service = AnalysisService()
+
+# Pydantic models
+class ThesisBase(BaseModel):
+    title: str
+    content: str
+
+class ThesisCreate(ThesisBase):
+    pass
+
+class Thesis(ThesisBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Function to sanitize text for database
+def sanitize_for_db(text):
+    if text is None:
+        return None
+    
+    if isinstance(text, str):
+        # Remove null bytes and other control characters
+        return re.sub(r'[\x00-\x1F\x7F]', '', text)
+    elif isinstance(text, dict):
+        # Recursively sanitize dictionary values
+        return {k: sanitize_for_db(v) for k, v in text.items()}
+    elif isinstance(text, list):
+        # Recursively sanitize list items
+        return [sanitize_for_db(item) for item in text]
+    else:
+        # Return other types as is
+        return text
+
+# Function to prepare data for Supabase
+def prepare_for_supabase(data):
+    # First sanitize all text
+    sanitized = sanitize_for_db(data)
+    
+    # Ensure JSON fields are properly formatted
+    if isinstance(sanitized, dict):
+        # For each field that should be JSON, make sure it's a valid JSON string
+        for key in sanitized:
+            if isinstance(sanitized[key], (dict, list)):
+                try:
+                    # Test if it can be JSON serialized
+                    json.dumps(sanitized[key])
+                except (TypeError, ValueError):
+                    # If it can't be serialized, convert to string
+                    sanitized[key] = str(sanitized[key])
+    
+    return sanitized
+
+# Routes
+@app.get("/")
+async def root():
+    return {"message": "Thesis API is running"}
+
+@app.get("/api/theses/", response_model=List[Thesis])
+async def get_theses():
+    try:
+        response = supabase.table('theses').select('*').execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/theses/{thesis_id}", response_model=Thesis)
+async def get_thesis(thesis_id: str):
+    try:
+        response = supabase.table('theses').select('*').eq('id', thesis_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Thesis not found")
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/theses/", response_model=Thesis)
+async def create_thesis(thesis: ThesisCreate):
+    try:
+        thesis_data = {
+            'id': str(uuid.uuid4()),
+            'title': thesis.title,
+            'content': thesis.content,
+            'user_id': 'test-user',  # TODO: Implement proper user authentication
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        response = supabase.table('theses').insert(thesis_data).execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/theses/{thesis_id}", response_model=Thesis)
+async def update_thesis(thesis_id: str, thesis: ThesisBase):
+    try:
+        thesis_data = {
+            'title': thesis.title,
+            'content': thesis.content,
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        response = supabase.table('theses').update(thesis_data).eq('id', thesis_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Thesis not found")
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/theses/{thesis_id}")
+async def delete_thesis(thesis_id: str):
+    try:
+        response = supabase.table('theses').delete().eq('id', thesis_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Thesis not found")
+        return {"message": "Thesis deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/papers/analyze")
+async def analyze_paper(
+    file: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    if not file.filename.endswith(('.jpg', '.jpeg', '.png', '.pdf')):
+        raise HTTPException(status_code=400, detail="Unsupported file format")
+
+    try:
+        # 1. Read file content
+        content = await file.read()
+        
+        # 2. Extract text using OCR service
+        extracted_text = await ocr_service.extract_text(content, file.content_type)
+        # Sanitize extracted text right away
+        extracted_text = sanitize_for_db(extracted_text)
+        
+        # 3. Run comprehensive analysis using OpenAI
+        paper_analysis = await analysis_service.analyze_paper(extracted_text)
+        citation_analysis = await analysis_service.analyze_citations(extracted_text)
+        gap_analysis = await analysis_service.analyze_research_gaps(extracted_text)
+        
+        # 4. Generate a unique ID for the paper
+        paper_id = str(uuid.uuid4())
+        
+        # 5. Prepare data for database
+        now = datetime.now().isoformat()
+        
+        # Store full analysis data in the papers table
+        try:
+            basic_info = paper_analysis.get("basic_info", {})
+            analysis_info = paper_analysis.get("analysis", {})
+            
+            # Prepare full paper data with all necessary fields
+            paper_data = {
+                "id": paper_id,
+                "title": basic_info.get("title", "Untitled Paper"),
+                "authors": basic_info.get("authors", []),
+                "year_of_publication": basic_info.get("year_of_publication", "Unknown"),
+                "paper_type": basic_info.get("type", "Unknown"),
+                "relevance_score": analysis_info.get("relevance_score", 5),
+                "file_url": f"local://{file.filename}",
+                "paper_analysis": paper_analysis,
+                "citation_analysis": citation_analysis,
+                "gap_analysis": gap_analysis,
+                "created_at": now,
+                "updated_at": now,
+                "extracted_text": extracted_text[:5000] if extracted_text else "",  # Store partial text as reference
+                "filename": file.filename
+            }
+            
+            # Sanitize and prepare data for Supabase
+            safe_paper_data = prepare_for_supabase(paper_data)
+            
+            # Insert paper data into the papers table only
+            response = supabase.table('papers').insert(safe_paper_data).execute()
+            
+            print(f"Paper saved to database with ID: {paper_id}")
+            
+        except Exception as db_error:
+            print(f"Error saving to database: {str(db_error)}")
+            # Continue even if database save fails
+        
+        # 6. Return the analysis results
+        return {
+            "message": "Paper analyzed successfully",
+            "paper_id": paper_id,
+            "file_url": f"local://{file.filename}",
+            "analysis": {
+                "paper_analysis": paper_analysis,
+                "citation_analysis": citation_analysis,
+                "gap_analysis": gap_analysis
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error analyzing paper: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/papers/", response_model=List[Dict[str, Any]])
+async def get_papers(credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)):
+    """Get all analyzed papers with their summaries"""
+    try:
+        # Only select the metadata fields needed for listing
+        response = supabase.table('papers').select(
+            'id,title,authors,year_of_publication,paper_type,relevance_score,created_at,updated_at,filename'
+        ).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/papers/{paper_id}", response_model=Dict[str, Any])
+async def get_paper_details(
+    paper_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Get detailed analysis of a specific paper"""
+    try:
+        response = supabase.table('papers').select('*').eq('id', paper_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/papers/search/", response_model=List[Dict[str, Any]])
+async def search_papers(
+    query: str = None,
+    year: int = None,
+    type: str = None,
+    min_relevance: int = None,
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Search papers with filters"""
+    try:
+        # Only select the metadata fields needed for listing
+        query_builder = supabase.table('papers').select(
+            'id,title,authors,year_of_publication,paper_type,relevance_score,created_at,updated_at,filename'
+        )
+        
+        if query:
+            query_builder = query_builder.or_(f"title.ilike.%{query}%,authors.ilike.%{query}%")
+        if year:
+            query_builder = query_builder.eq('year_of_publication', str(year))
+        if type:
+            query_builder = query_builder.eq('paper_type', type)
+        if min_relevance:
+            query_builder = query_builder.gte('relevance_score', min_relevance)
+            
+        response = query_builder.execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/papers/{paper_id}", response_model=Dict[str, Any])
+async def update_paper_analysis(
+    paper_id: str,
+    update_data: Dict[str, Any],
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Update an existing paper analysis"""
+    try:
+        # Check if paper exists
+        check_response = supabase.table('papers').select('id').eq('id', paper_id).single().execute()
+        if not check_response.data:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        
+        # Update timestamp
+        update_data["updated_at"] = datetime.now().isoformat()
+        
+        # If paper_analysis is provided, ensure we update the metadata fields too
+        if "paper_analysis" in update_data:
+            paper_analysis = update_data["paper_analysis"]
+            basic_info = paper_analysis.get("basic_info", {})
+            analysis_info = paper_analysis.get("analysis", {})
+            
+            # Update core metadata fields
+            if "title" in basic_info:
+                update_data["title"] = basic_info["title"]
+            if "authors" in basic_info:
+                update_data["authors"] = basic_info["authors"]
+            if "year_of_publication" in basic_info:
+                update_data["year_of_publication"] = basic_info["year_of_publication"]
+            if "type" in basic_info:
+                update_data["paper_type"] = basic_info["type"]
+            if "relevance_score" in analysis_info:
+                update_data["relevance_score"] = analysis_info["relevance_score"]
+        
+        # Sanitize and prepare data for Supabase
+        safe_update_data = prepare_for_supabase(update_data)
+        
+        # Update paper in the papers table
+        response = supabase.table('papers').update(safe_update_data).eq('id', paper_id).execute()
+        
+        return {
+            "message": "Paper analysis updated successfully",
+            "paper_id": paper_id,
+            "updated_data": response.data[0] if response.data else {}
+        }
+    except Exception as e:
+        print(f"Error updating paper analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/papers/{paper_id}")
+async def delete_paper(
+    paper_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Delete a paper analysis"""
+    try:
+        # Check if paper exists
+        check_response = supabase.table('papers').select('id').eq('id', paper_id).single().execute()
+        if not check_response.data:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        
+        # Delete from papers table
+        papers_response = supabase.table('papers').delete().eq('id', paper_id).execute()
+        
+        return {"message": "Paper deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting paper: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/papers/batch-analyze")
+async def batch_analyze_papers(
+    files: List[UploadFile] = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Batch analyze multiple papers"""
+    results = []
+    errors = []
+    
+    if len(files) > 10:
+        raise HTTPException(
+            status_code=400, 
+            detail="Maximum 10 files allowed for batch processing"
+        )
+    
+    for file in files:
+        try:
+            # Validate file format
+            if not file.filename.endswith(('.jpg', '.jpeg', '.png', '.pdf')):
+                errors.append({
+                    "filename": file.filename,
+                    "error": "Unsupported file format"
+                })
+                continue
+                
+            # 1. Read file content
+            content = await file.read()
+            
+            # 2. Extract text
+            extracted_text = await ocr_service.extract_text(content, file.content_type)
+            # Sanitize extracted text right away
+            extracted_text = sanitize_for_db(extracted_text)
+            
+            # 3. Run analysis
+            paper_analysis = await analysis_service.analyze_paper(extracted_text)
+            citation_analysis = await analysis_service.analyze_citations(extracted_text)
+            gap_analysis = await analysis_service.analyze_research_gaps(extracted_text)
+            
+            # 4. Generate ID and prepare data
+            paper_id = str(uuid.uuid4())
+            now = datetime.now().isoformat()
+            
+            # 5. Save to database
+            try:
+                basic_info = paper_analysis.get("basic_info", {})
+                analysis_info = paper_analysis.get("analysis", {})
+                
+                # Prepare full paper data with all necessary fields
+                paper_data = {
+                    "id": paper_id,
+                    "title": basic_info.get("title", "Untitled Paper"),
+                    "authors": basic_info.get("authors", []),
+                    "year_of_publication": basic_info.get("year_of_publication", "Unknown"),
+                    "paper_type": basic_info.get("type", "Unknown"),
+                    "relevance_score": analysis_info.get("relevance_score", 5),
+                    "file_url": f"local://{file.filename}",
+                    "paper_analysis": paper_analysis,
+                    "citation_analysis": citation_analysis,
+                    "gap_analysis": gap_analysis,
+                    "created_at": now,
+                    "updated_at": now,
+                    "extracted_text": extracted_text[:5000] if extracted_text else "",
+                    "filename": file.filename
+                }
+                
+                # Sanitize and prepare data for Supabase
+                safe_paper_data = prepare_for_supabase(paper_data)
+                
+                # Insert into papers table only
+                supabase.table('papers').insert(safe_paper_data).execute()
+                
+            except Exception as db_error:
+                print(f"Database error for {file.filename}: {str(db_error)}")
+                # Continue processing even if database save fails
+            
+            # 6. Add to results
+            results.append({
+                "filename": file.filename,
+                "paper_id": paper_id,
+                "title": basic_info.get("title", "Untitled Paper"),
+                "success": True
+            })
+            
+        except Exception as e:
+            errors.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+    
+    return {
+        "message": f"Processed {len(results)} papers successfully, {len(errors)} failures",
+        "results": results,
+        "errors": errors
+    }
+
+@app.get("/api/papers/{paper_id}/similar", response_model=List[Dict[str, Any]])
+async def get_similar_papers(
+    paper_id: str,
+    limit: int = 5,
+    credentials: HTTPAuthorizationCredentials = Depends(verify_api_key)
+):
+    """Get papers similar to the given paper"""
+    try:
+        # First get the source paper
+        paper_response = supabase.table('papers').select('*').eq('id', paper_id).single().execute()
+        if not paper_response.data:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        
+        source_paper = paper_response.data
+        
+        # Extract key characteristics for comparison
+        paper_analysis = source_paper.get("paper_analysis", {})
+        basic_info = paper_analysis.get("basic_info", {})
+        analysis_info = paper_analysis.get("analysis", {})
+        
+        # Get keywords for matching (from methods, findings, etc.)
+        keywords = []
+        
+        # Add methods as keywords
+        if "methods" in analysis_info:
+            methods = analysis_info["methods"]
+            if "methodology_type" in methods:
+                keywords.append(methods["methodology_type"])
+            if "specific_methods" in methods and isinstance(methods["specific_methods"], list):
+                keywords.extend(methods["specific_methods"])
+        
+        # Add main findings as keywords
+        if "main_findings" in analysis_info and isinstance(analysis_info["main_findings"], list):
+            keywords.extend(analysis_info["main_findings"])
+        
+        # Add paper type as keyword
+        if "type" in basic_info:
+            keywords.append(basic_info["type"])
+        
+        # Get all papers (only metadata fields for comparison)
+        all_papers_response = supabase.table('papers').select(
+            'id,title,authors,year_of_publication,paper_type,relevance_score,created_at,updated_at,filename'
+        ).neq('id', paper_id).execute()
+        
+        if not all_papers_response.data:
+            return []
+        
+        all_papers = all_papers_response.data
+        similar_papers = []
+        
+        # Simple similarity scoring - can be improved later
+        for paper in all_papers:
+            score = 0
+            
+            # Match by paper type
+            if paper.get("paper_type") == basic_info.get("type"):
+                score += 2
+            
+            # Match by year (within 5 years)
+            source_year = basic_info.get("year_of_publication", "Unknown")
+            paper_year = paper.get("year_of_publication", "Unknown")
+            
+            try:
+                if source_year != "Unknown" and paper_year != "Unknown":
+                    source_year_int = int(source_year)
+                    paper_year_int = int(paper_year)
+                    if abs(source_year_int - paper_year_int) <= 5:
+                        score += 1
+            except ValueError:
+                pass
+            
+            # For now, use these simple metrics
+            # Add paper with similarity score
+            similar_papers.append({
+                **paper,
+                "similarity_score": score
+            })
+        
+        # Sort by similarity score and take top 'limit'
+        similar_papers.sort(key=lambda p: p["similarity_score"], reverse=True)
+        return similar_papers[:limit]
+    
+    except Exception as e:
+        print(f"Error finding similar papers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+</file>
+
+<file path="models.py">
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+import uuid
+
+Base = declarative_base()
+
+class Thesis(Base):
+    __tablename__ = "theses"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)  # This will store the OCR extracted text
+    analysis = Column(Text, nullable=True)  # This will store Mistral's analysis
+    model_used = Column(String, nullable=True)
+    provider = Column(String, nullable=True)
+    user_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+</file>
+
+<file path="requirements.txt">
+fastapi==0.109.1
+uvicorn==0.27.0
+python-dotenv==1.0.0
+pydantic==2.6.1
+supabase==2.3.1
+python-multipart==0.0.9
+mistralai==0.1.3
+pillow==10.2.0
+pdf2image==1.17.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+</file>
+
+<file path="schema.sql">
+-- Create papers table
+create table if not exists papers (
+    id uuid primary key,
+    file_url text not null,
+    filename text not null,
+    content_type text not null,
+    extracted_text text,
+    paper_analysis jsonb,  -- Stores the comprehensive paper analysis
+    citation_analysis jsonb,  -- Stores citation analysis
+    gap_analysis jsonb,  -- Stores research gaps analysis
+    created_at timestamp with time zone default now(),
+    updated_at timestamp with time zone default now()
+);
+
+-- Create a view for easier querying of paper analysis
+create or replace view paper_summaries as
+select 
+    id,
+    file_url,
+    filename,
+    paper_analysis->'basic_info'->>'title' as title,
+    paper_analysis->'basic_info'->'authors' as authors,
+    paper_analysis->'basic_info'->>'year_of_publication' as year_of_publication,
+    paper_analysis->'basic_info'->>'type' as paper_type,
+    paper_analysis->'analysis'->>'relevance_score' as relevance_score,
+    paper_analysis->'analysis'->'main_findings' as main_findings,
+    paper_analysis->'analysis'->'methods'->>'methodology_type' as methodology,
+    paper_analysis->'analysis'->'gaps_and_limitations'->'identified_gaps' as gaps,
+    paper_analysis->'meta_info'->>'reviewer_initials' as reviewer_initials,
+    paper_analysis->'basic_info'->>'link_to_article' as article_link,
+    created_at,
+    updated_at
+from papers;
+
+-- Create function to update updated_at timestamp
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$ language plpgsql;
+
+-- Create trigger to automatically update updated_at
+create trigger update_papers_updated_at
+    before update on papers
+    for each row
+    execute function update_updated_at_column();
+</file>
+
+<file path="supabase_client.py">
+from supabase import create_client
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+supabase_url = os.getenv("SUPABASE_URL", "https://otkckrxodedjkipgnnqf.supabase.co")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # Make sure to use service role key, not anon key
+
+if not supabase_key:
+    raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
+
+supabase = create_client(supabase_url, supabase_key)
+</file>
+
+<file path="test_api.py">
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_URL = "http://localhost:8000"
+API_KEY = os.getenv("MISTRAL_API_KEY")
+
+def test_analyze_paper():
+    """Test the paper analysis endpoint with a sample PDF."""
+    
+    # Check if API key exists
+    if not API_KEY:
+        print("ERROR: MISTRAL_API_KEY not found in environment variables")
+        return
+    
+    # Path to a test PDF file
+    # Update this path to point to a valid PDF file on your system
+    test_file_path = "test_document.pdf"
+    
+    # Check if the file exists
+    if not os.path.exists(test_file_path):
+        with open(test_file_path, "w") as f:
+            f.write("Test document content")
+        print(f"Created test file: {test_file_path}")
+    
+    # Open the file in binary mode
+    with open(test_file_path, "rb") as f:
+        files = {"file": (os.path.basename(test_file_path), f, "application/pdf")}
+        
+        # Make the request
+        print(f"Sending request to {API_URL}/api/papers/analyze")
+        print(f"API Key (first 5 chars): {API_KEY[:5]}...")
+        
+        headers = {
+            "Authorization": f"Bearer {API_KEY}"
+        }
+        
+        response = requests.post(
+            f"{API_URL}/api/papers/analyze",
+            headers=headers,
+            files=files
+        )
+        
+        # Print the status code and response
+        print(f"Status code: {response.status_code}")
+        
+        if response.status_code == 200:
+            print("Success!")
+            print(response.json())
+        else:
+            print(f"Error: {response.text}")
+
+if __name__ == "__main__":
+    test_analyze_paper()
+</file>
+
+</files>
