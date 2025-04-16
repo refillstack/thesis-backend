@@ -10,4 +10,6 @@ supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # Make sure to use servic
 if not supabase_key:
     raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
 
+# The error indicates an issue with 'proxy' parameter
+# Create the client without any additional options
 supabase = create_client(supabase_url, supabase_key) 
